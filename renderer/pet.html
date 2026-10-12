@@ -25,7 +25,7 @@
         <div class="rest-card-actions"><button id="rest-done" type="button" class="rest-primary">完成啦</button><button id="rest-snooze" type="button">10 分钟后</button><button id="rest-skip" type="button">今天跳过</button></div>
         <p id="rest-action-status" class="rest-action-status" role="status"></p>
       </section>
-      <div id="ask" class="ask hidden" role="dialog" aria-live="polite" aria-label="需要输入">
+      <div id="ask" class="ask hidden" role="dialog" aria-live="polite" aria-labelledby="ask-label">
         <div class="ask-head">
           <div class="ask-label" id="ask-label" data-i18n="ask.needsInput">需要输入</div>
           <div class="ask-sess" id="ask-sess"></div>
@@ -37,7 +37,7 @@
             <div class="ask-hint" id="ask-hint"></div>
             <div class="ask-opts" id="ask-opts"></div>
             <div class="ask-other hidden" id="ask-input-row">
-              <input id="ask-text" type="text" data-i18n-ph="ask.placeholder" placeholder="输入自定义回答…" />
+              <input id="ask-text" type="text" aria-label="自定义回答或修改意见" data-i18n-ph="ask.placeholder" placeholder="输入自定义回答…" />
             </div>
           </div>
         </div>

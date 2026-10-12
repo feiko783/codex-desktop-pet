@@ -7,24 +7,26 @@
 
   <p>
     <a href="README.md">简体中文</a> ·
-    <a href="README_EN.md">English</a>
+    <a href="README_ZH_TW.md">繁體中文</a> ·
+    <a href="README_EN.md">English</a> ·
+    <a href="README_FR.md">Français</a>
   </p>
   <p>
     <a href="https://github.com/vista-zhangg/codex-desktop-pet/releases/latest"><strong>Download for Windows</strong></a> ·
-    <a href="docs/releases/1.9.7.md">1.9.7 release notes</a> ·
+    <a href="docs/releases/1.9.8.md">1.9.8 release notes</a> ·
     <a href="docs/介绍.md">User guide (中文)</a>
   </p>
 
   <p>
     <a href="https://github.com/vista-zhangg/codex-desktop-pet/actions/workflows/ci.yml"><img src="https://github.com/vista-zhangg/codex-desktop-pet/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
     <img src="https://img.shields.io/badge/platform-Windows%20x64-0078D4?logo=windows" alt="Windows x64 only">
-    <img src="https://img.shields.io/badge/version-1.9.7-F6A04A" alt="Version 1.9.7">
+    <img src="https://img.shields.io/badge/version-1.9.8-F6A04A" alt="Version 1.9.8">
     <a href="LICENSE"><img src="https://img.shields.io/badge/code%20license-MIT-2EA44F" alt="MIT License"></a>
   </p>
 </div>
 
 > [!IMPORTANT]
-> AgentPaw currently supports **Windows x64 only**. macOS, Linux, and Windows on ARM are not supported. Documentation is available in Chinese and English; the application UI is currently Simplified Chinese. The Windows binaries are not commercially code-signed yet, so SmartScreen may display a warning on first launch.
+> AgentPaw currently supports **Windows x64 only**. macOS, Linux, and Windows on ARM are not supported. Project introductions are available in Simplified Chinese, Traditional Chinese, English, and French; the application UI is currently Simplified Chinese. The Windows binaries are not commercially code-signed yet, so SmartScreen may display a warning on first launch.
 
 **AgentPaw · AI Desktop Companion** is an independent open-source project, not affiliated with OpenAI or Anthropic. It combines a Codex desktop pet, Claude Code companion, task notifications, and an agent usage monitor. The executable is `AgentPaw.exe`; data lives in `~/.agentpaw/`. First launch copies settings, characters, and history from earlier versions while keeping the original data as a recovery backup.
 

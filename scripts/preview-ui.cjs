@@ -302,6 +302,7 @@ app.whenReady().then(async()=>{
     }
     await pet.webContents.executeJavaScript('applyStats({...lastStats,chipDisplay:{...lastStats.chipDisplay,showCat:true}});void 0;');
     pet.setSize(520,740);
+    await require('./check-ask-layout.cjs')(pet, { capture, log });
     await pet.webContents.executeJavaScript(`openActionPop(); document.getElementById('ac-tab-recent').click();void 0;`);
     await capture(pet,'pet-recent');
     assert.equal(await pet.webContents.executeJavaScript(`document.querySelectorAll('.ac-history-row').length`),3);

@@ -824,6 +824,7 @@ function showAskPanel() {
   const sess = c.sessionId ? ' · #' + String(c.sessionId).slice(-3) : '';
   const queue = askQueue.length > 1 ? `${askIdx + 1}/${askQueue.length} · ` : '';
   askSess.textContent = queue + (c.project || '?') + sess;
+  askEl.dataset.kind = c.kind;
 
   if (c.kind === 'ask') {
     if (!elic || elic.key !== choiceKey(c)) {
@@ -853,6 +854,7 @@ function clearAskBody() {
   askPage.textContent = '';
   askInputRow.classList.add('hidden');
   askText.value = '';
+  askText.placeholder = t('ask.placeholder');
   askTerm.textContent = t('ask.goTerminal');
 }
 
@@ -931,6 +933,7 @@ function buildRadioCard(label, desc, value, q) {
       card.classList.add('sel');
     }
     updateSubmitEnabled(q);
+    fitPopup(askEl);
   });
   return card;
 }

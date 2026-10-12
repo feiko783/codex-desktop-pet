@@ -7,24 +7,28 @@
 
   <p>
     <a href="README.md">简体中文</a> ·
-    <a href="README_EN.md">English</a>
+    <a href="README_ZH_TW.md">繁體中文</a> ·
+    <a href="README_EN.md">English</a> ·
+    <a href="README_FR.md">Français</a>
   </p>
   <p>
     <a href="https://github.com/vista-zhangg/codex-desktop-pet/releases/latest"><strong>下载 Windows 安装包</strong></a> ·
-    <a href="docs/releases/1.9.7.md">1.9.7 更新说明</a> ·
+    <a href="docs/releases/1.9.8.md">1.9.8 更新说明</a> ·
     <a href="docs/介绍.md">使用指南</a>
   </p>
 
   <p>
     <a href="https://github.com/vista-zhangg/codex-desktop-pet/actions/workflows/ci.yml"><img src="https://github.com/vista-zhangg/codex-desktop-pet/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
     <img src="https://img.shields.io/badge/platform-Windows%20x64-0078D4?logo=windows" alt="Windows x64 only">
-    <img src="https://img.shields.io/badge/version-1.9.7-F6A04A" alt="Version 1.9.7">
+    <img src="https://img.shields.io/badge/version-1.9.8-F6A04A" alt="Version 1.9.8">
     <a href="LICENSE"><img src="https://img.shields.io/badge/code%20license-MIT-2EA44F" alt="MIT License"></a>
   </p>
 </div>
 
 > [!IMPORTANT]
 > AgentPaw 当前**仅支持 Windows x64**，不支持 macOS、Linux 或 Windows on ARM。Windows 安装包尚未进行商业代码签名，首次运行时可能出现 SmartScreen 提示。
+
+项目介绍提供简体中文、繁体中文、英文与法语版本，可通过页面顶部切换；应用界面目前使用简体中文。
 
 产品名称和所有对外发布物统一使用 **AgentPaw · AI 桌伴**。
 
