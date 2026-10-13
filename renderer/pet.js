@@ -692,6 +692,7 @@ function settleEdgeLayout() {
   // No screen coordinates in the headless renderer tests; the real Electron
   // window always has them. This also avoids inventing a desktop in Node.
   if (!petGeometrySnapshot()) return;
+  if (peekOpen && keepWorkPeekOpen) { fitPopup(peekEl); return; }
   // Keep the intrinsic capsule width while re-evaluating the edge anchor.
   // Resetting to the old 320px base here would briefly reintroduce clipping
   // after a drag or immediately before the radial menu is laid out.
@@ -2588,7 +2589,7 @@ function finishDrag(el, e, cancelled) {
   try { el.releasePointerCapture(gesture.pid); } catch {}
   try { window.pet.endWinDrag(gesture.id); } catch {}
   if (wasMove) {
-    if (peekOpen) closePeek();
+    if (peekOpen && !keepWorkPeekOpen) closePeek();
     // END_WIN_DRAG is sent after the final position, so the queued size/anchor
     // settlement cannot revive an already released movement gesture.
     setTimeout(() => {

@@ -620,6 +620,67 @@ async function main() {
       assert.strictEqual(ends[0][1][0], moves[0][1][2].id);
     });
 
+    for (const keepOpen of [true, false]) {
+      for (const finish of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+        const openedDrag = world();
+        openedDrag.handlers.companionState({ keepWorkPeekOpen: keepOpen });
+        openedDrag.elements('peek').classList.add('hidden');
+        openedDrag.handlers.stats(working);
+        openedDrag.window.screenX = 100;
+        openedDrag.window.screenY = 100;
+        openedDrag.window.innerWidth = 520;
+        openedDrag.window.innerHeight = 520;
+        openedDrag.elements('peek').scrollHeight = 180;
+        clickCat(openedDrag);
+        await sleep(15);
+        openedDrag.calls.length = 0;
+        const handle = openedDrag.elements('cat');
+        handle.dispatch('pointerdown', { button: 0, pointerId: 9, screenX: 110, screenY: 110, clientX: 10, clientY: 10 });
+        handle.dispatch('pointermove', { button: 0, pointerId: 9, screenX: 150, screenY: 130, clientX: 50, clientY: 30 });
+        check(`拖动过程中速览保持显示(${keepOpen}, ${finish})`, () => assert(!openedDrag.elements('peek').classList.contains('hidden')));
+        handle.dispatch(finish, { button: 0, pointerId: 9, screenX: 150, screenY: 130, clientX: 50, clientY: 30 });
+        await sleep(20);
+        check(`拖动结束遵循保持展开设置(${keepOpen}, ${finish})`, () => {
+          assert.strictEqual(openedDrag.elements('peek').classList.contains('hidden'), !keepOpen);
+          assert.strictEqual(openedDrag.calls.filter(([name]) => name === 'endWinDrag').length, 1);
+          const sizes = openedDrag.calls.filter(([name]) => name === 'setPetSize');
+          assert(sizes.length > 0, 'drag settlement must fit the current window');
+          assert.strictEqual(sizes.at(-1)[1][3], keepOpen ? 'popup' : 'resting');
+        });
+        if (keepOpen) {
+          vm.runInContext('settleEdgeLayout()', openedDrag.sandbox);
+          await sleep(15);
+          check(`贴边布局调整仍保留展开尺寸(${finish})`, () => {
+            assert(!openedDrag.elements('peek').classList.contains('hidden'));
+            const sizes = openedDrag.calls.filter(([name]) => name === 'setPetSize');
+            assert.strictEqual(sizes.at(-1)[1][3], 'popup');
+          });
+          openedDrag.elements('peek-close').dispatch('click');
+          check(`拖动后X仍可关闭(${finish})`, () => assert(openedDrag.elements('peek').classList.contains('hidden')));
+        }
+      }
+    }
+
+    const capsuleDrag = world();
+    capsuleDrag.handlers.companionState({ keepWorkPeekOpen: true });
+    capsuleDrag.elements('peek').classList.add('hidden');
+    capsuleDrag.handlers.stats(working);
+    capsuleDrag.window.screenX = 100;
+    capsuleDrag.window.screenY = 100;
+    vm.runInContext('catVisible = false; openPeek()', capsuleDrag.sandbox);
+    const capsule = capsuleDrag.elements('chip');
+    capsule.dispatch('pointerdown', { button: 0, pointerId: 10, screenX: 110, screenY: 110, clientX: 10, clientY: 10 });
+    capsule.dispatch('pointermove', { button: 0, pointerId: 10, screenX: 140, screenY: 140, clientX: 40, clientY: 40 });
+    capsule.dispatch('pointerup', { button: 0, pointerId: 10, screenX: 140, screenY: 140, clientX: 40, clientY: 40 });
+    await sleep(20);
+    check('隐藏头像后拖动胶囊也保持速览', () => assert(!capsuleDrag.elements('peek').classList.contains('hidden')));
+    capsule.dispatch('pointerdown', { button: 0, pointerId: 11, screenX: 140, screenY: 140, clientX: 40, clientY: 40 });
+    capsule.dispatch('pointermove', { button: 0, pointerId: 11, screenX: 160, screenY: 140, clientX: 60, clientY: 40 });
+    capsule.dispatch('pointerup', { button: 0, pointerId: 11, screenX: 160, screenY: 140, clientX: 60, clientY: 40 });
+    capsuleDrag.elements('peek-close').dispatch('click');
+    await sleep(20);
+    check('松手后立即X关闭不会被异步布局重新打开', () => assert(capsuleDrag.elements('peek').classList.contains('hidden')));
+
     const cancelledWorld = world();
     cancelledWorld.elements('peek').classList.add('hidden');
     cancelledWorld.handlers.stats(working);
