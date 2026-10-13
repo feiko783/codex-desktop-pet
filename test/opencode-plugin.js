@@ -69,6 +69,7 @@ async function main() {
   assert.strictEqual(start.state, 'idle');
   assert.strictEqual(start.session_id, 'sess-1');
   assert.strictEqual(start.agent_id, 'opencode');
+  assert.strictEqual(start.source_pid, process.pid, 'plugin reports its running service PID for desktop focus');
   assert.strictEqual(start.cwd, 'C:\\proj');
   assert.strictEqual(got[0].token, token, 'x-agentpaw-token header sent');
 

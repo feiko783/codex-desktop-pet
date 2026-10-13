@@ -32,8 +32,8 @@ function baseStats(over = {}) {
   };
 }
 
-function world() {
-  const w = loadRenderer(['shared/i18n.js', 'shared/states.js', 'shared/pet-assets.js', 'shared/pet-insights.js', 'renderer/pet.js']);
+function world(configure) {
+  const w = loadRenderer(['shared/i18n.js', 'shared/states.js', 'shared/pet-assets.js', 'shared/pet-insights.js', 'renderer/pet.js'], configure);
   return w;
 }
 const stateClasses = (el) => el.classList.list.filter((c) => STATE_WORDS.includes(c));
@@ -409,6 +409,85 @@ async function main() {
     clickCat(w);
     w.document.dispatch('keydown', { key: 'Escape', preventDefault() {}, stopPropagation() {} });
     check('Esc 关闭速览', () => assert(peek.classList.contains('hidden')));
+
+    const pendingTimers = new Map();
+    const sticky = world(testWorld => {
+      testWorld.sandbox.setTimeout = (fn, delay) => {
+        const timer = { fn, delay };
+        pendingTimers.set(timer, timer);
+        return timer;
+      };
+      testWorld.sandbox.clearTimeout = timer => pendingTimers.delete(timer);
+    });
+    sticky.elements('peek').classList.add('hidden');
+    sticky.handlers.stats(working);
+    clickCat(sticky);
+    const autoTimers = () => [...pendingTimers.values()].filter(timer => timer.delay === 8000);
+    check('默认速览仍启动8秒自动关闭', () => assert.strictEqual(autoTimers().length, 1));
+    sticky.handlers.companionState({ keepWorkPeekOpen: true });
+    check('开启保持展开立即取消待执行关闭计时', () => assert.strictEqual(autoTimers().length, 0));
+    sticky.window.dispatch('blur');
+    check('保持展开时失焦不关闭', () => assert(!sticky.elements('peek').classList.contains('hidden')));
+    sticky.elements('peek').dispatch('pointerleave');
+    check('保持展开时移出鼠标不启动关闭计时', () => assert.strictEqual(autoTimers().length, 0));
+    sticky.document.dispatch('keydown', { key: 'Escape', preventDefault() {}, stopPropagation() {} });
+    check('保持展开时Esc不关闭', () => assert(!sticky.elements('peek').classList.contains('hidden')));
+    clickCat(sticky);
+    check('保持展开时再次点击头像不关闭', () => assert(!sticky.elements('peek').classList.contains('hidden')));
+    sticky.handlers.companionState({ keepWorkPeekOpen: 'false' });
+    sticky.window.dispatch('blur');
+    check('非法广播不改变保持展开策略', () => assert(!sticky.elements('peek').classList.contains('hidden')));
+    sticky.elements('peek-close').dispatch('click');
+    check('保持展开时X仍关闭', () => assert(sticky.elements('peek').classList.contains('hidden')));
+    for (const button of ['peek-focus', 'peek-panel']) {
+      clickCat(sticky);
+      sticky.elements(button).dispatch('click');
+      check(`保持展开时${button}仍收起并执行操作`, () => {
+        assert(sticky.elements('peek').classList.contains('hidden'));
+        assert(sticky.calls.some(([name]) => name === (button === 'peek-focus' ? 'focusSession' : 'openPanel')));
+      });
+    }
+    clickCat(sticky);
+    sticky.elements('peek-list').children[0].dispatch('click');
+    check('保持展开时会话行仍收起', () => assert(sticky.elements('peek').classList.contains('hidden')));
+    for (const kind of ['waiting', 'needsinput', 'error']) {
+      clickCat(sticky);
+      sticky.handlers.event({ kind });
+      check(`保持展开时${kind}提示仍优先展示`, () => assert(sticky.elements('peek').classList.contains('hidden')));
+    }
+    clickCat(sticky);
+    vm.runInContext('openActionPop()', sticky.sandbox);
+    check('保持展开时行动中心切换仍收起速览', () => assert(sticky.elements('peek').classList.contains('hidden')));
+    vm.runInContext('closeActionPop(); openPeek()', sticky.sandbox);
+    sticky.handlers.companionState({ keepWorkPeekOpen: false });
+    check('关闭保持展开立即恢复计时', () => assert.strictEqual(autoTimers().length, 1));
+    const timer = autoTimers()[0];
+    sticky.handlers.companionState({ keepWorkPeekOpen: false });
+    check('重复广播不重置已有计时', () => assert.strictEqual(autoTimers()[0], timer));
+    timer.fn();
+    check('默认8秒计时实际收起速览', () => assert(sticky.elements('peek').classList.contains('hidden')));
+    clickCat(sticky);
+    sticky.window.dispatch('blur');
+    check('关闭保持展开后恢复失焦关闭', () => assert(sticky.elements('peek').classList.contains('hidden')));
+    clickCat(sticky);
+    clickCat(sticky);
+    check('关闭保持展开后恢复头像收起', () => assert(sticky.elements('peek').classList.contains('hidden')));
+
+    const initial = world(testWorld => { testWorld.behavior.companionState = { keepWorkPeekOpen: true }; });
+    await Promise.resolve();
+    initial.elements('peek').classList.add('hidden');
+    initial.handlers.stats(working);
+    clickCat(initial);
+    initial.window.dispatch('blur');
+    check('启动读取已保存保持展开设置', () => assert(!initial.elements('peek').classList.contains('hidden')));
+    const racing = world(testWorld => { testWorld.behavior.companionState = { keepWorkPeekOpen: false }; });
+    racing.handlers.companionState({ keepWorkPeekOpen: true });
+    await Promise.resolve();
+    racing.elements('peek').classList.add('hidden');
+    racing.handlers.stats(working);
+    clickCat(racing);
+    racing.window.dispatch('blur');
+    check('较旧初始化响应不覆盖实时广播', () => assert(!racing.elements('peek').classList.contains('hidden')));
 
     const idleWorld = world();
     idleWorld.elements('peek').classList.add('hidden');

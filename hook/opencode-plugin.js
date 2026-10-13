@@ -183,7 +183,7 @@ export const AgentPawOpenCodePlugin = async ({ directory }) => {
       if (!sessionID) return;
       touchSession(sessionID);
       const meta = sessions.get(sessionID) || {};
-      const body = { state, event, session_id: sessionID, agent_id: AGENT_ID };
+      const body = { state, event, session_id: sessionID, agent_id: AGENT_ID, source_pid: process.pid };
       if (extra.cwd || meta.cwd) body.cwd = extra.cwd || meta.cwd;
       if (extra.model || meta.model) body.model = extra.model || meta.model;
       if (extra.session_title || meta.title) body.session_title = extra.session_title || meta.title;
