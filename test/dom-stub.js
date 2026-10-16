@@ -73,7 +73,10 @@ function makeElement(tag, id) {
     el.children.splice(index, 0, c);
     return c;
   };
-  el.remove = () => { if (el.parentNode) el.parentNode.children = el.parentNode.children.filter((c) => c !== el); };
+  el.remove = () => {
+    if (el.parentNode) el.parentNode.children = el.parentNode.children.filter((c) => c !== el);
+    el.parentNode = null;
+  };
   // Auto-vivify per-selector children used by the renderer.
   el._selCache = {};
   el.querySelector = (sel) => {

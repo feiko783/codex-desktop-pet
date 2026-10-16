@@ -60,6 +60,94 @@ async function main() {
     });
   }
 
+  console.log('[R0-dots] 会话圆点展示期限、数量与聚合');
+  {
+    const w = world();
+    const rows = () => w.elements('sessions').children;
+    const snapshot = sessions => w.handlers.stats(baseStats({ sessions }));
+    const session = (sessionId, state = 'working', extra = {}) => ({ sessionId, project: sessionId, agent: 'codex', state, idleMs: 0, ...extra });
+    snapshot(Array.from({ length: 12 }, (_, i) => session('busy-' + i)));
+    check('最多8个圆点及一个聚合按钮', () => {
+      assert.strictEqual(rows().filter(row => row.classList.contains('sess-dot')).length, 8);
+      assert.strictEqual(rows().at(-1).textContent, '+4');
+      assert.strictEqual(rows().at(-1).tagName, 'BUTTON');
+      assert(rows().at(-1).getAttribute('aria-label').includes('4'));
+    });
+    let openedSessions = 0;
+    w.window.AgentPawTaskCenter = { openSessions() { openedSessions++; } };
+    rows().at(-1).dispatch('click');
+    check('聚合按钮进入完整会话页', () => assert.strictEqual(openedSessions, 1));
+    const more = rows().at(-1);
+    snapshot(Array.from({ length: 13 }, (_, i) => session('busy-' + i)));
+    check('周期刷新复用聚合按钮保持键盘焦点', () => {
+      assert.strictEqual(rows().at(-1), more);
+      assert.strictEqual(more.textContent, '+5');
+    });
+    w.document.elementFromPoint = () => ({ closest: selector => selector.includes('.sess-more') ? more : null });
+    w.handlers.pointerCheck({ x: 10, y: 10 });
+    check('聚合按钮能恢复点击而空白仍穿透', () => assert.strictEqual(vm.runInContext('mouseIgnoring', w.sandbox), false));
+    w.document.elementFromPoint = () => null;
+    w.handlers.pointerCheck({ x: -1, y: -1 });
+    check('聚合按钮外不阻挡其他应用', () => assert.strictEqual(vm.runInContext('mouseIgnoring', w.sandbox), true));
+    snapshot(Array.from({ length: 8 }, (_, i) => session('eight-' + i)));
+    check('恰好8个时不显示聚合按钮', () => assert.strictEqual(rows().length, 8));
+    snapshot([session('archived', 'idle', { archived: true, pinned: true }), session('sleep', 'sleeping'), session('background', 'working', { headless: true })]);
+    check('归档、休眠和后台会话不占圆点', () => assert.strictEqual(rows().length, 0));
+
+    snapshot([session('idle', 'idle', { idleMs: 1000 })]);
+    check('近期空闲会话可见', () => assert.strictEqual(rows().length, 1));
+    w.clock.offset += 118000;
+    snapshot([session('idle', 'idle', { idleMs: 0 })]);
+    check('2分钟临界前仍可见', () => assert.strictEqual(rows().length, 1));
+    w.clock.offset += 1001;
+    snapshot([session('idle', 'idle', { idleMs: 0 })]);
+    check('心跳刷新不延长空闲圆点期限', () => assert.strictEqual(rows().length, 0));
+    snapshot([session('idle')]);
+    check('隐藏会话重新工作后出现', () => assert.strictEqual(rows().length, 1));
+    snapshot([session('idle', 'idle', { idleMs: 0 })]);
+    check('新一轮工作后空闲期限重置', () => assert.strictEqual(rows().length, 1));
+    snapshot([session('already-old', 'idle', { idleMs: 120000 })]);
+    check('首次看到已过期空闲会话直接隐藏', () => assert.strictEqual(rows().length, 0));
+    snapshot([session('done', 'idle', { badge: 'done', idleMs: 0 }), session('aborted', 'idle', { badge: 'interrupted', idleMs: 0 })]);
+    check('结果圆点显示完成和中断状态', () => {
+      assert(rows().some(row => row.classList.contains('done')));
+      assert(rows().some(row => row.classList.contains('error')));
+    });
+    snapshot([session('done', 'idle', { idleMs: 0 }), session('aborted', 'idle', { idleMs: 0 })]);
+    check('结果标记消失后不再追加空闲展示时间', () => assert.strictEqual(rows().length, 0));
+    snapshot([session('busy', 'working', { idleMs: 999999 }), session('waiting', 'waiting', { idleMs: 999999 })]);
+    w.clock.offset += 999999;
+    snapshot([session('busy', 'working', { idleMs: 9999999 }), session('waiting', 'waiting', { idleMs: 9999999 })]);
+    check('活动及待处理会话不按时间隐藏', () => assert.strictEqual(rows().length, 2));
+    snapshot(Array.from({ length: 10 }, (_, i) => session('wait-' + i, 'waiting')));
+    check('折叠紧急会话的聚合按钮保留提醒颜色', () => assert(rows().at(-1).classList.contains('waiting')));
+    snapshot([session('done-priority', 'idle', { badge: 'done', idleMs: 0 }), session('ordinary', 'idle'),
+      session('working-priority'), session('interrupt-priority', 'idle', { badge: 'interrupted', idleMs: 0 })]);
+    check('近期中断、活动、完成、普通空闲顺序明确', () => {
+      assert(rows()[0].classList.contains('error'));
+      assert(rows()[1].classList.contains('working'));
+      assert(rows()[2].classList.contains('done'));
+      assert(rows()[3].classList.contains('idle'));
+      assert(rows()[2].title.includes('完成'));
+    });
+    const original = [session('pinned', 'idle', { pinned: true }), session('error', 'error'), session('working'), session('attention', 'needsinput')];
+    snapshot(original);
+    check('待处理与错误优先于活动和关注空闲', () => {
+      assert(rows()[0].classList.contains('needsinput'));
+      assert(rows()[1].classList.contains('error'));
+      assert(rows()[2].classList.contains('working'));
+      assert.strictEqual(original.length, 4);
+      assert.strictEqual(vm.runInContext('lastStats.sessions.length', w.sandbox), 4);
+    });
+    snapshot([]);
+    check('空列表同时清除聚合按钮和展示记录', () => {
+      assert.strictEqual(rows().length, 0);
+      assert.strictEqual(vm.runInContext('sessionDotHistory.size', w.sandbox), 0);
+    });
+    snapshot([session('idle', 'idle', { idleMs: NaN })]);
+    check('会话消失会清理展示记录，非法时间安全处理', () => assert.strictEqual(rows().length, 1));
+  }
+
   console.log('[R1] 聚合梯子优先级（对齐 STATES.md）');
   {
     const w = world();
