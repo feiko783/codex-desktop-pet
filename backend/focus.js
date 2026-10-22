@@ -61,7 +61,7 @@ async function activateDesktopWindow(agentId, pids) {
       });
   });
   const pid = selectDesktopPid(agentId, pids, processes);
-  return pid ? activateWinPids([pid], DESKTOP_APPS[agentId]) : false;
+  return pid ? { pid, focused: Boolean(await activateWinPids([pid], DESKTOP_APPS[agentId])) } : null;
 }
 
 // Windows: one PowerShell run tries every candidate pid in order and focuses
@@ -139,17 +139,24 @@ function codexThreadUrl(session) {
   return `codex://threads/${encodeURIComponent(id)}`;
 }
 
-// Returns true if the OS accepted a precise deep link or a window was focused.
-// Dependencies are injectable so the behavior can be tested without changing
-// the foreground window or launching an application.
+function openChamberSessionUrl(session) {
+  if (!session || session.agentId !== 'opencode' || typeof session.id !== 'string') return null;
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(session.id)) return null;
+  return `openchamber://session/${encodeURIComponent(session.id)}`;
+}
+
+// A session result confirms protocol dispatch, not that the target app loaded it.
+// Dependencies are injectable to avoid foreground changes in unit tests.
 async function focusSession(session, options = {}) {
-  if (!session) return false;
+  const agentId = typeof session?.agentId === 'string' ? session.agentId : '';
+  const result = mode => ({ ok: mode !== 'failed', mode, agentId });
+  if (!session) return result('failed');
 
   const threadUrl = codexThreadUrl(session);
   if (threadUrl && typeof options.openExternal === 'function') {
     try {
       await options.openExternal(threadUrl);
-      return true;
+      return result('session');
     } catch {
       // If a Codex protocol handler is unavailable, retain the PID fallback.
     }
@@ -162,21 +169,32 @@ async function focusSession(session, options = {}) {
   const ordered = [...new Set(candidates)].filter(p => Number.isInteger(p) && p > 0);
   if (DESKTOP_APPS[session.agentId]) {
     const activateDesktop = options.activateDesktop || activateDesktopWindow;
-    try {
-      if (await activateDesktop(session.agentId, ordered)) return true;
-    } catch {}
+    let desktop = null;
+    try { desktop = await activateDesktop(session.agentId, ordered); } catch {}
+    if (desktop && Number.isInteger(desktop.pid) && desktop.pid > 0) {
+      const sessionUrl = openChamberSessionUrl(session);
+      // Dispatch only after finding an existing desktop; standalone OpenCode
+      // must keep its terminal rather than launch an unrelated GUI instance.
+      if (sessionUrl && typeof options.openExternal === 'function') {
+        try {
+          await options.openExternal(sessionUrl);
+          return result('session');
+        } catch {}
+      }
+      if (desktop.focused === true) return result('window');
+    }
     if (session.agentId === 'opencode' && ordered.length) {
       const activateTerminal = options.activatePids || (pids => {
         const chain = require('./pidwalk').resolve(pids[0], 32).pidChain || [];
         return activateWinPids([...new Set([...pids, ...chain])], 'terminal');
       });
-      try { return Boolean(await activateTerminal(ordered)); } catch { return false; }
+      try { return result(await activateTerminal(ordered) ? 'window' : 'failed'); } catch { return result('failed'); }
     }
     // ZCode must not raise an unrelated ancestor window.
-    return false;
+    return result('failed');
   }
   const activatePids = options.activatePids || activateWinPids;
-  try { return Boolean(await activatePids(ordered)); } catch { return false; }
+  try { return result(await activatePids(ordered) ? 'window' : 'failed'); } catch { return result('failed'); }
 }
 
-module.exports = { codexThreadUrl, focusSession, selectDesktopPid };
+module.exports = { codexThreadUrl, openChamberSessionUrl, focusSession, selectDesktopPid };

@@ -979,8 +979,10 @@ function startWorkflowShortcuts() {
       navigating = true;
       try {
         lastAttentionSessionId = item.sessionId;
-        const ok = await focusSession(core.getSession(item.sessionId), { openExternal: url => shell.openExternal(url) });
-        if (!ok) showWorkflowSurface('actions');
+        const result = await focusSession(core.getSession(item.sessionId), { openExternal: url => shell.openExternal(url) });
+        if (!result.ok) showWorkflowSurface('actions');
+        else if (result.mode === 'window' && ['zcode', 'opencode'].includes(result.agentId)) showPet();
+        sendPet(IPC.WORKFLOW_COMMAND, { type: 'focus-result', result });
       } finally { navigating = false; }
     },
     toggle: () => {
@@ -1043,13 +1045,13 @@ function registerWorkflowIpc() {
     return { ok };
   });
   ipcMain.handle(IPC.FOCUS_RECENT, async (e, id) => {
-    if (!fromPet(e) || !taskCenter) return false;
+    if (!fromPet(e) || !taskCenter) return { ok: false, mode: 'failed', agentId: '' };
     const entry = taskCenter.recentEntry(id);
-    if (!entry) return false;
+    if (!entry) return { ok: false, mode: 'failed', agentId: '' };
     const session = core.getSession(entry.sessionId) || (entry.agent === 'codex' ? { id: entry.sessionId, agentId: 'codex' } : null);
-    const ok = await focusSession(session, { openExternal: url => shell.openExternal(url) });
-    if (ok) { taskCenter.markRead([id]); emitStats(); }
-    return ok;
+    const result = await focusSession(session, { openExternal: url => shell.openExternal(url) });
+    if (result.ok) { taskCenter.markRead([id]); emitStats(); }
+    return result;
   });
 }
 
@@ -1557,7 +1559,10 @@ function registerIpc() {
     if (!permissions || typeof permId !== 'string' || !permId) return false;
     return permissions.decide(permId, behavior) === true;
   });
-  ipcMain.handle(IPC.FOCUS_SESSION, (_e, sessionId) => {
+  ipcMain.handle(IPC.FOCUS_SESSION, (e, sessionId) => {
+    if (!stateOfSender(e.sender) || typeof sessionId !== 'string' || !sessionId || sessionId.length > 256) {
+      return { ok: false, mode: 'failed', agentId: '' };
+    }
     const stored = taskCenter && taskCenter.lookup(sessionId);
     return focusSession(core.getSession(sessionId) || (stored && stored.agent === 'codex' ? { id: sessionId, agentId: 'codex' } : null), {
       openExternal: (url) => shell.openExternal(url),

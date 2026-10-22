@@ -17,7 +17,8 @@ const row = { sessionId: 'task-a', agent: 'codex', project: 'secret project', pr
   state: 'waiting', focusable: true, updatedAt: 1 };
 let saved = { privacyMode: false, notifications: workflowPreferences.notifications(), shortcuts: workflowPreferences.shortcuts() };
 let visible = true;
-let focusResult = true;
+let focusResult = { ok: true, mode: 'session', agentId: 'codex' };
+const focusedSessions = [];
 const taskCenter = createTaskCenter();
 taskCenter.sync({ sessions: [row], actions: [] }, saved.notifications);
 taskCenter.record({ ...row, kind: 'done', eventKey: 'one', ts: Date.now() });
@@ -32,7 +33,7 @@ const context = {
   sendPet: (key, payload) => messages.push({ key, payload }),
   emitStats() {}, t: () => '私密项目',
   core: { getSession: id => id === row.sessionId ? { id, agentId: 'codex' } : null },
-  focusSession: async (session) => !!session && focusResult,
+  focusSession: async (session) => { focusedSessions.push(session); return session ? focusResult : { ok: false, mode: 'failed', agentId: '' }; },
   shell: { openExternal() {} },
   showPet: () => { visible = true; },
   firstAlivePetWin: () => ({ isVisible: () => visible }),
@@ -42,6 +43,8 @@ const context = {
 };
 vm.createContext(context); vm.runInContext(source, context);
 context.registerWorkflowIpc(); context.startWorkflowShortcuts();
+const focusStart = main.indexOf('  ipcMain.handle(IPC.FOCUS_SESSION,');
+vm.runInContext(main.slice(focusStart, main.indexOf('  // Dynamic sizing:', focusStart)), context);
 const invoke = (key, sender, ...args) => handlers.get(key)({ sender }, ...args);
 (async () => {
   assert.equal(invoke(IPC.GET_WORKFLOW_PREFERENCES, foreign), null);
@@ -62,18 +65,36 @@ const invoke = (key, sender, ...args) => handlers.get(key)({ sender }, ...args);
   invoke(IPC.SET_WORKFLOW_PREFERENCES, settings, { unmuteProject: row.projectKey });
   assert.equal(saved.notifications.mutedProjects.length, 0);
   const recent = taskCenter.sync({ sessions: [row], actions: [] }, saved.notifications).recent[0];
-  focusResult = false;
-  assert.equal(await invoke(IPC.FOCUS_RECENT, pet, recent.id), false);
+  focusResult = { ok: false, mode: 'failed', agentId: 'codex' };
+  assert.deepEqual(await invoke(IPC.FOCUS_RECENT, pet, recent.id), focusResult);
   assert.equal(taskCenter.recentEntry(recent.id).read, false, 'failed navigation does not acknowledge unseen work');
-  focusResult = true;
-  assert.equal(await invoke(IPC.FOCUS_RECENT, pet, recent.id), true);
+  focusResult = { ok: true, mode: 'window', agentId: 'codex' };
+  assert.deepEqual(await invoke(IPC.FOCUS_RECENT, pet, recent.id), focusResult);
   assert.equal(taskCenter.recentEntry(recent.id).read, true);
-  assert.equal(await invoke(IPC.FOCUS_RECENT, foreign, recent.id), false);
+  assert.equal((await invoke(IPC.FOCUS_RECENT, foreign, recent.id)).ok, false);
+  assert.deepEqual(await invoke(IPC.FOCUS_SESSION, pet, row.sessionId), focusResult);
+  const focusCalls = focusedSessions.length;
+  assert.equal((await invoke(IPC.FOCUS_SESSION, foreign, row.sessionId)).ok, false);
+  assert.equal((await invoke(IPC.FOCUS_SESSION, pet, {})).ok, false);
+  assert.equal(focusedSessions.length, focusCalls, 'foreign senders and malformed IDs cannot launch navigation');
+  assert.equal((await invoke(IPC.FOCUS_SESSION, pet, 'unknown')).ok, false);
   invoke(IPC.SET_WORKFLOW_PREFERENCES, settings, { shortcuts: { peek: 'Ctrl+Shift+P', next: 'Ctrl+Shift+J', toggle: 'Ctrl+Shift+H' } });
   bindings.get('Ctrl+Shift+H')(); assert.equal(visible, false);
   bindings.get('Ctrl+Shift+H')(); assert.equal(visible, true);
   bindings.get('Ctrl+Shift+P')(); assert.equal(messages.at(-1).payload, 'peek');
+  visible = false;
+  focusResult = { ok: true, mode: 'window', agentId: 'zcode' };
   await bindings.get('Ctrl+Shift+J')(); assert.equal(context.lastAttentionSessionId, row.sessionId);
+  assert.equal(visible, true, 'window fallback feedback must be visible when the pet was hidden');
+  assert.deepEqual(messages.at(-1), { key: IPC.WORKFLOW_COMMAND, payload: { type: 'focus-result', result: focusResult } });
+  visible = false;
+  focusResult = { ok: true, mode: 'session', agentId: 'opencode' };
+  await bindings.get('Ctrl+Shift+J')();
+  assert.equal(visible, false, 'silent session dispatch does not reveal a hidden pet');
+  focusResult = { ok: false, mode: 'failed', agentId: 'codex' };
+  await bindings.get('Ctrl+Shift+J')();
+  assert.equal(messages.at(-2).payload, 'actions', 'failed shortcut navigation opens the action center');
+  assert.deepEqual(messages.at(-1).payload, { type: 'focus-result', result: focusResult });
   assert.equal(invoke(IPC.CLEAR_RECENT, foreign).ok, false);
   assert.equal(invoke(IPC.CLEAR_RECENT, pet).ok, true);
   console.log('Workflow main IPC, privacy, navigation and shortcut integration checks passed');

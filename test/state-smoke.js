@@ -39,6 +39,7 @@ function world(configure) {
 const stateClasses = (el) => el.classList.list.filter((c) => STATE_WORDS.includes(c));
 const catSrc = (w) => w.elements('cat-img').getAttribute('src');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const flush = async () => { for (let i = 0; i < 5; i++) await Promise.resolve(); };
 function clickCat(w, x = 10, y = 10) {
   const cat = w.elements('cat');
   cat.dispatch('pointerdown', { button: 0, pointerId: 1, screenX: x, screenY: y });
@@ -427,6 +428,87 @@ async function main() {
     check('working > loafing', () => assert(w.elements('cat').classList.contains('working')));
   }
 
+  console.log('[R11-focus] 结构化会话打开结果与窗口降级提示');
+  {
+    const w = world();
+    await flush();
+    const failedText = '没能打开这个会话，请在对应 Agent 中手动打开';
+    const request = async result => {
+      w.elements('bubble').classList.add('hidden');
+      w.elements('bubble-text').textContent = '';
+      w.behavior.focusResult = result;
+      return await vm.runInContext("requestSessionFocus('focus-target')", w.sandbox);
+    };
+    const invalidResults = [
+      false, true, undefined, null, {}, [],
+      { ok: false, mode: 'failed', agentId: 'zcode' },
+      { ok: false, mode: 'session', agentId: 'opencode' },
+      { ok: true, mode: 'failed', agentId: 'zcode' },
+      { ok: true, mode: 'unknown', agentId: 'zcode' },
+      { ok: true, agentId: 'zcode' },
+      { ok: true, mode: 'window' },
+      { ok: true, mode: 'window', agentId: ' ' },
+      { ok: true, mode: 'session', agentId: 1 },
+      { ok: 'true', mode: 'window', agentId: 'zcode' },
+    ];
+    for (const result of invalidResults) {
+      const ok = await request(result);
+      check(`拒绝失败或非法结果 ${JSON.stringify(result)}`, () => {
+        assert.strictEqual(ok, false);
+        assert.strictEqual(w.elements('bubble-text').textContent, failedText);
+        assert(!w.elements('bubble').classList.contains('hidden'));
+      });
+    }
+    for (const [agentId, text] of [
+      ['zcode', '已打开 ZCode，当前版本需手动选择会话'],
+      ['opencode', '已打开 opencode 所在窗口，请手动选择会话'],
+    ]) {
+      const ok = await request({ ok: true, mode: 'window', agentId });
+      check(`${agentId} 仅窗口前置时明确提示手动选择`, () => {
+        assert.strictEqual(ok, true);
+        assert.strictEqual(w.elements('bubble-text').textContent, text);
+        assert(!w.elements('bubble').classList.contains('hidden'));
+      });
+    }
+    for (const agentId of ['opencode', 'codex', 'generic']) {
+      const ok = await request({ ok: true, mode: 'session', agentId });
+      check(`${agentId} 会话协议提交不宣称加载或定位成功`, () => {
+        assert.strictEqual(ok, true);
+        assert.strictEqual(w.elements('bubble-text').textContent, '');
+        assert(w.elements('bubble').classList.contains('hidden'));
+      });
+    }
+    for (const agentId of ['codex', 'generic']) {
+      const ok = await request({ ok: true, mode: 'window', agentId });
+      check(`${agentId} 窗口模式保留现有无成功气泡交互`, () => {
+        assert.strictEqual(ok, true);
+        assert(w.elements('bubble').classList.contains('hidden'));
+      });
+    }
+    for (const reject of [
+      () => Promise.reject(new Error('focus unavailable')),
+      () => { throw new Error('preload unavailable'); },
+    ]) {
+      w.elements('bubble').classList.add('hidden');
+      w.window.pet.focusSession = reject;
+      let ok;
+      try { ok = await vm.runInContext("requestSessionFocus('focus-target')", w.sandbox); } catch {}
+      await Promise.resolve();
+      check('聚焦请求异常转为失败反馈且不向调用方抛出', () => {
+        assert.strictEqual(ok, false);
+        assert.strictEqual(w.elements('bubble-text').textContent, failedText);
+        assert(!w.elements('bubble').classList.contains('hidden'));
+      });
+    }
+    w.handlers.stats(baseStats({ workingCount: 2, sessions: [
+      { sessionId: 'zcode-a', agent: 'zcode', project: 'a', state: 'working' },
+      { sessionId: 'opencode-b', agent: 'opencode', project: 'b', state: 'working' },
+    ] }));
+    clickCat(w);
+    check('多任务提示只承诺打开对应 Agent', () =>
+      assert.strictEqual(w.elements('peek-subtitle').textContent, '点击任务可打开对应 Agent'));
+  }
+
   console.log('[R11] 左键工作速览：状态分流、聚焦与拖动不误触');
   {
     const w = world();
@@ -462,13 +544,14 @@ async function main() {
     });
 
     const failedFocusWorld = world();
+    await flush();
     failedFocusWorld.elements('peek').classList.add('hidden');
     failedFocusWorld.elements('bubble').classList.add('hidden');
     failedFocusWorld.behavior.focusResult = false;
     failedFocusWorld.handlers.stats(working);
     clickCat(failedFocusWorld);
     failedFocusWorld.elements('peek-focus').dispatch('click');
-    await Promise.resolve();
+    await flush();
     check('系统无法打开会话时给出可见反馈', () => {
       assert.strictEqual(
         failedFocusWorld.elements('bubble-text').textContent,

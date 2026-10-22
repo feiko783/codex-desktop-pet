@@ -4,7 +4,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
-const { createStubWorld } = require('./dom-stub');
+const { createStubWorld, loadRenderer } = require('./dom-stub');
 const { t } = require('../shared/i18n');
 
 const world = createStubWorld();
@@ -20,6 +20,11 @@ Object.assign(sandbox, {
   actionPopOpen: false, actionPop: elements('action-pop'), lastStats: snapshot([row('a')]),
   actionableItems: () => [], fitPopup() {}, peekAgentLabel: () => 'Codex',
   PEEK_BUSY_STATES: new Set(), radialOpen: false, askActive: false,
+  sessionFocusFeedback(result, onSuccess) {
+    if (result?.ok !== true) return false;
+    if (onSuccess) onSuccess();
+    return true;
+  },
   closeRadial() { closeRadialCalls++; sandbox.radialOpen = false; },
   openActionPop(initialTab) { sandbox.actionPopOpen = true; window.AgentPawTaskCenter.opened(initialTab); },
   closeActionPop() { sandbox.actionPopOpen = false; window.AgentPawTaskCenter.closed(); },
@@ -38,13 +43,161 @@ window.pet.markRecentRead = ids => {
   });
 };
 let focused = 0, cleared = 0;
-window.pet.focusRecent = async () => { focused++; return true; };
+window.pet.focusRecent = async () => { focused++; return { ok: true, mode: 'session', agentId: 'codex' }; };
 window.pet.clearRecent = async () => { cleared++; return { ok: true }; };
 vm.createContext(sandbox);
 vm.runInContext(fs.readFileSync(path.join(__dirname, '../renderer/task-center.js'), 'utf8'), sandbox);
 const center = window.AgentPawTaskCenter;
 const flush = async () => { for (let i = 0; i < 5; i++) await Promise.resolve(); };
 const click = name => elements('ac-tab-' + name).dispatch('click');
+
+async function checkFocusResults() {
+  const w = loadRenderer([
+    'shared/i18n.js', 'shared/states.js', 'shared/pet-assets.js', 'shared/pet-insights.js',
+    'renderer/pet.js', 'renderer/task-center.js',
+  ], testWorld => {
+    testWorld.window.pet.onWorkflowCommand = handler => { testWorld.handlers.workflowCommand = handler; };
+    testWorld.sandbox.requestAnimationFrame = callback => { callback(); return 0; };
+  });
+  await flush();
+  const session = { sessionId: 'focus-target', project: 'target', agent: 'zcode', state: 'working', focusable: true };
+  w.handlers.stats({ ...snapshot([{ ...row('focus-recent'), read: true, agent: 'zcode' }]), sessions: [session], workingCount: 1, idleMs: 0 });
+  let focusResult;
+  let focusError;
+  let openedId;
+  const focus = async id => {
+    openedId = id;
+    if (focusError) throw focusError;
+    return focusResult;
+  };
+  w.window.pet.focusRecent = focus;
+  w.window.pet.focusSession = focus;
+  const opened = () => vm.runInContext('actionPopOpen', w.sandbox);
+  const start = tab => vm.runInContext(`openActionPop('${tab}')`, w.sandbox);
+  const action = tab => {
+    start(tab);
+    const list = w.elements(tab === 'recent' ? 'ac-recent-list' : 'ac-session-list');
+    list.children[0].children[2].children[0].dispatch('click');
+  };
+  const errors = [];
+  const verify = (name, fn) => {
+    try { fn(); console.log('  PASS', name); }
+    catch (error) { errors.push(error); console.error('  FAIL', name, error.message); }
+  };
+  const failedText = '没能打开这个会话，请在对应 Agent 中手动打开';
+  for (const tab of ['recent', 'sessions']) {
+    for (const result of [
+      { ok: false, mode: 'failed', agentId: 'zcode' },
+      undefined, null, true, {},
+      { ok: true, mode: 'failed', agentId: 'zcode' },
+      { ok: true, mode: 'window' },
+    ]) {
+      focusResult = result;
+      action(tab); await flush();
+      verify(`${tab} 失败或非法结果保留任务中心 ${JSON.stringify(result)}`, () => {
+        assert.strictEqual(openedId, tab === 'recent' ? 'focus-recent' : 'focus-target');
+        assert.strictEqual(opened(), true);
+        assert.strictEqual(w.elements('ac-status').textContent, '未能打开会话，请到对应 Agent 中查看');
+        assert.strictEqual(w.elements('bubble-text').textContent, failedText);
+      });
+    }
+    focusError = new Error('focus rejected');
+    action(tab); await flush();
+    verify(`${tab} 请求拒绝保留弹层与错误`, () => {
+      assert.strictEqual(opened(), true);
+      assert(w.elements('ac-status').textContent);
+    });
+    focusError = null;
+    for (const [agentId, text] of [
+      ['zcode', '已打开 ZCode，当前版本需手动选择会话'],
+      ['opencode', '已打开 opencode 所在窗口，请手动选择会话'],
+    ]) {
+      focusResult = { ok: true, mode: 'window', agentId };
+      action(tab); await flush();
+      verify(`${tab} ${agentId} 窗口提示在关闭弹层后仍可见`, () => {
+        assert.strictEqual(opened(), false);
+        assert(w.elements('action-pop').classList.contains('hidden'));
+        assert(!w.elements('bubble').classList.contains('hidden'));
+        assert.strictEqual(w.elements('bubble-text').textContent, text);
+        assert(w.calls.filter(([name]) => name === 'setPetSize').at(-1)[1][3] === 'popup', 'window keeps space for the feedback bubble');
+      });
+    }
+    for (const agentId of ['opencode', 'codex', 'generic']) {
+      focusResult = { ok: true, mode: 'session', agentId };
+      action(tab); await flush();
+      verify(`${tab} ${agentId} 协议提交后关闭且不声称加载成功`, () => {
+        assert.strictEqual(opened(), false);
+        assert(w.elements('bubble').classList.contains('hidden'));
+      });
+    }
+  }
+  const focusCalls = [];
+  let finishFocus;
+  w.window.pet.focusRecent = id => {
+    focusCalls.push(['recent', id]);
+    return new Promise(resolve => { finishFocus = resolve; });
+  };
+  w.window.pet.focusSession = async id => {
+    focusCalls.push(['sessions', id]);
+    return { ok: true, mode: 'session', agentId: 'codex' };
+  };
+  action('recent');
+  w.elements('ac-recent-list').children[0].children[2].children[0].dispatch('click');
+  w.elements('ac-tab-sessions').dispatch('click');
+  w.elements('ac-session-list').children[0].children[2].children[0].dispatch('click');
+  await flush();
+  verify('导航及重复点击期间 busy 拦截后续聚焦请求', () => {
+    assert.deepStrictEqual(focusCalls, [['recent', 'focus-recent']]);
+    assert.strictEqual(opened(), true);
+    assert.strictEqual(w.elements('ac-tab-sessions').getAttribute('aria-selected'), 'true');
+  });
+  finishFocus({ ok: false, mode: 'failed', agentId: 'zcode' });
+  await flush();
+  verify('在途请求结构化失败后保留当前标签和弹层', () => {
+    assert.strictEqual(opened(), true);
+    assert.strictEqual(w.elements('ac-tab-sessions').getAttribute('aria-selected'), 'true');
+    assert.strictEqual(w.elements('ac-status').textContent, '未能打开会话，请到对应 Agent 中查看');
+    assert.strictEqual(w.elements('bubble-text').textContent, failedText);
+  });
+  w.elements('ac-session-list').children[0].children[2].children[0].dispatch('click');
+  await flush();
+  verify('失败后 busy 释放允许从当前会话标签重试', () => {
+    assert.deepStrictEqual(focusCalls, [['recent', 'focus-recent'], ['sessions', 'focus-target']]);
+    assert.strictEqual(opened(), false);
+  });
+  for (const [agentId, text] of [
+    ['zcode', '已打开 ZCode，当前版本需手动选择会话'],
+    ['opencode', '已打开 opencode 所在窗口，请手动选择会话'],
+  ]) {
+    start('sessions');
+    w.handlers.workflowCommand({ type: 'focus-result', result: { ok: true, mode: 'window', agentId } });
+    verify(`快捷键 ${agentId} 结果复用窗口降级提示`, () => {
+      assert.strictEqual(w.elements('bubble-text').textContent, text);
+      assert(!w.elements('bubble').classList.contains('hidden'));
+    });
+  }
+  for (const result of [undefined, null, {}, { ok: false, mode: 'failed', agentId: 'zcode' }]) {
+    w.elements('bubble').classList.add('hidden');
+    w.handlers.workflowCommand({ type: 'focus-result', result });
+    verify('快捷键失败及非法结果使用相同错误气泡', () => {
+      assert.strictEqual(w.elements('bubble-text').textContent, failedText);
+      assert(!w.elements('bubble').classList.contains('hidden'));
+    });
+  }
+  w.elements('bubble').classList.add('hidden');
+  w.handlers.workflowCommand({ type: 'focus-result', result: { ok: true, mode: 'session', agentId: 'opencode' } });
+  verify('快捷键会话协议提交不显示虚假成功提示', () => assert(w.elements('bubble').classList.contains('hidden')));
+  for (const ignored of [null, undefined, {}, { type: 'unknown' }]) w.handlers.workflowCommand(ignored);
+  vm.runInContext('closeActionPop()', w.sandbox);
+  w.handlers.workflowCommand('peek');
+  verify('原 peek 字符串命令仍打开速览', () => assert.strictEqual(vm.runInContext('peekOpen', w.sandbox), true));
+  w.handlers.workflowCommand('actions');
+  verify('原 actions 字符串命令仍打开任务中心', () => {
+    assert.strictEqual(opened(), true);
+    assert.strictEqual(w.elements('ac-tab-actions').getAttribute('aria-selected'), 'true');
+  });
+  assert.strictEqual(errors.length, 0, `${errors.length} structured focus checks failed`);
+}
 
 (async () => {
   center.render(sandbox.lastStats);
@@ -142,5 +295,7 @@ const click = name => elements('ac-tab-' + name).dispatch('click');
   assert.equal(elements('ac-tab-recent').getAttribute('aria-selected'), 'true', 'unsupported preferred tabs retain default selection');
   assert.equal(requests.length, requestCount + 1);
   complete(); await flush();
-  console.log('Task center automatic read, sessions overflow, navigation, failure and action isolation checks passed');
-})().catch(error => { console.error(error); process.exitCode = 1; });
+  await checkFocusResults();
+  console.log('Task center automatic read, sessions overflow, navigation, failure and structured focus checks passed');
+  process.exit(0);
+})().catch(error => { console.error(error); process.exit(1); });

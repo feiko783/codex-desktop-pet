@@ -138,7 +138,7 @@ function createStubWorld() {
   const companionSubscribers = [];
   handlers.companionState = (value) => companionSubscribers.forEach(cb => cb(value));
   const calls = []; // record of preload calls for assertions
-  const behavior = { focusResult: true };
+  const behavior = { focusResult: { ok: true, mode: 'session', agentId: 'codex' } };
 
   const pet = {
     onEvent: (cb) => { handlers.event = cb; },

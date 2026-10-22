@@ -1831,13 +1831,30 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden && pendingQuotaAlerts.size && !quotaAlertRetryTimer) flushQuotaAlerts();
 });
 
-function requestSessionFocus(sessionId) {
-  if (!sessionId) return;
-  Promise.resolve(window.pet.focusSession(sessionId))
-    .then((focused) => {
-      if (focused === false) showBubble(t('peek.focusFailed'), 4200, true);
-    })
-    .catch(() => showBubble(t('peek.focusFailed'), 4200, true));
+function sessionFocusFeedback(result, onSuccess) {
+  const ok = result && typeof result === 'object' && !Array.isArray(result)
+    && result.ok === true && (result.mode === 'session' || result.mode === 'window')
+    && typeof result.agentId === 'string' && result.agentId.trim().length > 0;
+  if (!ok) {
+    showBubble(t('peek.focusFailed'), 4200, true);
+    return false;
+  }
+  if (onSuccess) onSuccess();
+  if (result.mode === 'window') {
+    const key = result.agentId === 'zcode' ? 'peek.focusWindowZcode'
+      : result.agentId === 'opencode' ? 'peek.focusWindowOpencode' : '';
+    if (key) showBubble(t(key), 4200, true);
+  }
+  return true;
+}
+
+async function requestSessionFocus(sessionId) {
+  if (!sessionId) return false;
+  try {
+    return sessionFocusFeedback(await window.pet.focusSession(sessionId));
+  } catch {
+    return sessionFocusFeedback(null);
+  }
 }
 function hideBubble() {
   bubble.classList.add('hidden');

@@ -120,13 +120,11 @@
       card.appendChild(heading);
       card.appendChild(element('div', 'ac-row-title', label(row)));
       const controls = element('div', 'ac-row-controls');
-      if (row.focusable) controls.appendChild(button('打开会话', async () => {
-        const ok = await run(async () => {
-          if (!await window.pet.focusRecent(row.id)) throw new Error('未能打开会话，请到对应 Agent 中查看');
-          return true;
-        });
-        if (ok) closeActionPop();
-      }));
+      if (row.focusable) controls.appendChild(button('打开会话', () => run(async () => {
+        const result = await window.pet.focusRecent(row.id);
+        if (!sessionFocusFeedback(result, closeActionPop)) throw new Error('未能打开会话，请到对应 Agent 中查看');
+        return true;
+      })));
       else controls.appendChild(element('span', 'ac-row-note', '会话窗口已不可定位'));
       card.appendChild(controls);
       next.set(row.id, { signature: rowSignature, card });
@@ -156,12 +154,11 @@
       card.appendChild(element('div', 'ac-row-title', label(row)));
       card.appendChild(element('div', 'ac-row-note', `${row.archived ? '已结束' : sessMeta(row.state) || row.state} · #${row.sessionId.slice(-6)}${row.pinned ? ' · 已关注' : ''}${row.notificationsMuted ? ' · 已静音' : ''}`));
       const controls = element('div', 'ac-row-controls');
-      if (row.focusable !== false) controls.appendChild(button('打开', async () => {
-        if (await run(async () => {
-          if (!await window.pet.focusSession(row.sessionId)) throw new Error('未能打开会话，请到对应 Agent 中查看');
-          return true;
-        })) closeActionPop();
-      }));
+      if (row.focusable !== false) controls.appendChild(button('打开', () => run(async () => {
+        const result = await window.pet.focusSession(row.sessionId);
+        if (!sessionFocusFeedback(result, closeActionPop)) throw new Error('未能打开会话，请到对应 Agent 中查看');
+        return true;
+      })));
       const follow = button(row.pinned ? '取消关注' : '关注', () => run(() => window.pet.updateSessionPreferences(row.sessionId, { pinned: !stats.sessions.find(item => item.sessionId === row.sessionId)?.pinned })));
       follow.setAttribute('aria-pressed', String(!!row.pinned));
       controls.appendChild(follow);
@@ -221,7 +218,9 @@
   get('ac-clear-recent').addEventListener('click', () => run(() => window.pet.clearRecent()));
   get('peek-center').addEventListener('click', event => { event.stopPropagation(); openActionPop(); });
   if (window.pet.onWorkflowCommand) window.pet.onWorkflowCommand(command => {
-    if (command === 'peek') {
+    if (command?.type === 'focus-result') {
+      sessionFocusFeedback(command.result);
+    } else if (command === 'peek') {
       if (radialOpen) closeRadial();
       if (actionPopOpen) return;
       if (askActive) { openActionPop(); return; }
